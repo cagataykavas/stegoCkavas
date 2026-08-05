@@ -1,7 +1,7 @@
 """
 stego_ai.backend_api
 --------------------
-Controller for Alice's Stego Lab.
+Controller used by the optional desktop interface.
 """
 import os
 import json

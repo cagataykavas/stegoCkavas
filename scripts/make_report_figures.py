@@ -1,7 +1,7 @@
 """
 scripts/make_report_figures.py
 
-Creates "teacher-friendly" figures:
+Creates report-ready figures:
 - examples of TP / TN / FP / FN
 - difference heatmaps (cover vs stego) for the same stem
 - residual (high-pass) heatmaps
@@ -10,7 +10,7 @@ It uses the saved binary model from:
   work_dir/saved_models/models_binary.joblib
 
 Example:
-  python scripts\make_report_figures.py --work-dir ..\runs\bpp04_rescooc --model xgb --out-dir ..\runs\bpp04_rescooc\report_figs
+  python scripts/make_report_figures.py --work-dir ../runs/bpp04_rescooc --model xgb --out-dir ../runs/bpp04_rescooc/report_figs
 """
 
 import argparse

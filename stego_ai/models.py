@@ -4,8 +4,8 @@ stego_ai.models
 Feature extraction + model training/evaluation.
 
 This module intentionally focuses on classical ML (RF/XGB/LGB/SVM/LogReg)
-and handcrafted features. For CNN-based SOTA (SRNet, YeNet, etc.), you'd
-build a separate deep-learning pipeline.
+and handcrafted features. The compact high-pass CNN lives in
+``stego_ai.train_stego_cnn``.
 """
 
 from __future__ import annotations

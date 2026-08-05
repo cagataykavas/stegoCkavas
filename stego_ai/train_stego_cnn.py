@@ -304,7 +304,7 @@ def main():
 
     split_root = resolve_split_root(args.dataset_dir)
     train_classes = list_classes(split_root, "train")
-    v"al"_classes = list_classes(split_root, "val")
+    val_classes = list_classes(split_root, "val")
 
     if train_classes != val_classes:
         print("[warn] train/val class folders differ. Using train classes as canonical.")

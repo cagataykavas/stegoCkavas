@@ -94,6 +94,28 @@ DCT_COORDS: List[Tuple[int, int]] = [
     (3, 3), (4, 2), (2, 4),
 ]
 
+
+def payload_capacity_bytes(height: int, width: int, algorithm: str) -> int:
+    """Return usable text/noise bytes after transform headers and redundancy."""
+    alg = algorithm.lower().strip()
+    header_samples = HEADER_BYTES * 8 * HEADER_REP
+    if alg == "dct":
+        blocks = ((int(height) + 7) // 8) * ((int(width) + 7) // 8)
+        total_slots = blocks * len(DCT_COORDS)
+        usable_bits = max(0, (total_slots - header_samples) // DEFAULT_DCT_REP)
+        return usable_bits // 8
+    if alg == "dwt":
+        band_height = (int(height) + 1) // 2
+        band_width = (int(width) + 1) // 2
+        total_slots = 2 * band_height * band_width
+        usable_bits = max(0, (total_slots - header_samples) // DEFAULT_DWT_REP)
+        return usable_bits // 8
+    if alg == "lsb":
+        return max(0, (int(height) * int(width) * 3) // 8)
+    if alg == "pvd":
+        return max(0, (int(height) * int(width) * 3) // 16)
+    return 0
+
 # -----------------------------------------------------------------------------
 # BIT / BYTE HELPERS
 # -----------------------------------------------------------------------------
@@ -798,7 +820,11 @@ def process_image(
             elif isinstance(secret_message, str) and secret_message != "":
                 payload_bytes = secret_message.encode("utf-8")
             else:
-                nbytes = max(1, int((h * w * float(bpp)) / 8))
+                requested_bytes = max(1, int((h * w * float(bpp)) / 8))
+                capacity = payload_capacity_bytes(h, w, alg)
+                if capacity < 1:
+                    raise ValueError(f"Image is too small for the {alg.upper()} transform header")
+                nbytes = min(requested_bytes, capacity)
                 payload_bytes = _get_random_bytes(nbytes, seed)
 
             if alg == "dct":
