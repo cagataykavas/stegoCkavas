@@ -1,215 +1,226 @@
-# StegoCkavas — Image Steganography & Steganalysis Toolkit
+# StegoCkavas — Image Steganography & Steganalysis Lab
 
-An experimental Python toolkit for **generating steganographic images, preparing steganalysis datasets, extracting forensic image features, training cover-vs-stego classifiers, comparing embedding algorithms, and visualising model behaviour**.
+[![CI](https://github.com/cagataykavas/stegoCkavas/actions/workflows/ci.yml/badge.svg)](https://github.com/cagataykavas/stegoCkavas/actions/workflows/ci.yml)
 
-The project supports a full experimental workflow rather than a single encoder/decoder: cover images can be transformed using multiple embedding methods and payload levels, organised into reproducible train/test datasets, analysed using handcrafted residual features, and classified with several machine-learning models.
+A reproducible Python lab for **image steganography, steganalysis, forensic feature engineering, classical ML, CNN detection, and explanation tooling**. The repository can hide and recover UTF-8 payloads with pixel- and transform-domain methods, build leakage-aware cover/stego datasets, train detectors, and produce residual/saliency evidence.
+
+The project deliberately separates three claims that are often blurred together:
+
+1. **Steganography** conceals the existence of a payload; it is not automatically encryption.
+2. **Integrity** checks such as CRC32 detect accidental corruption; they are not authentication.
+3. **Detection accuracy** is only meaningful when dataset identity, pairing, preprocessing, split policy, payload, and algorithm are controlled.
+
+## What is runnable now
+
+The repaired package lives under `stego_ai/` and exposes a CLI:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev]"
+
+python -m stego_ai demo --output-dir demo_output
+```
+
+The zero-dataset demo creates a deterministic textured cover, performs real PNG round trips for LSB, DCT, and DWT, verifies recovered UTF-8 text, calculates PSNR, hashes outputs, and writes `demo_report.json`.
+
+No detector score in this README is fabricated. Measured detector metrics belong to a named dataset/run artifact.
 
 ## Research questions
 
-The repository is structured around questions such as:
+The project supports experiments such as:
 
-- How detectable are different image steganography methods?
-- How does payload size in bits per pixel (BPP) affect detectability?
-- Can residual statistics reveal embedding artifacts that are visually imperceptible?
-- How do classical classifiers compare on the same steganalysis features?
-- Can a classifier distinguish not only cover/stego images but also the embedding algorithm?
-- Where does a CNN focus when it predicts that an image contains hidden information?
+- How detectable are LSB, PVD, DCT, and DWT embedding methods?
+- How does payload in bits per pixel affect detection difficulty?
+- Do residual histograms or residual co-occurrences expose embedding artifacts more cleanly than raw RGB?
+- How do Logistic Regression, SVM, Random Forest, and optional boosting models compare on identical splits?
+- Can a detector generalize across embedding algorithms rather than memorize one generator?
+- Where does a CNN focus when it predicts that an image is steganographic?
+- How much of an apparently strong score disappears when source-image leakage is removed?
 
-## End-to-end pipeline
+## System architecture
 
-```text
-Cover images
-     │
-     ├──► optional normalization
-     │
-     ▼
-Steganographic embedding
-LSB / PVD / DCT / DWT
-     │
-     ▼
-Binary + multiclass dataset generation
-     │
-     ▼
-Feature extraction
-raw / DCT / residual histogram / residual co-occurrence
-     │
-     ▼
-Model training
-LogReg / SVM / Random Forest / optional XGBoost / LightGBM
-     │
-     ▼
-Evaluation + saved metrics/models
-     │
-     ├──► qualitative analysis
-     ├──► payload sweeps
-     └──► heatmaps / report figures
+```mermaid
+flowchart TD
+    A[Cover image + payload] --> B[Capacity calculation]
+    B --> C[LSB / DCT / DWT embedder]
+    C --> D[Lossless stego image]
+    D --> E[Extraction + integrity check]
+
+    A --> F[Paired cover/stego dataset]
+    D --> F
+    F --> G[Source-identity split]
+    G --> H[Raw / DCT / residual features]
+    G --> I[High-pass CNN]
+    H --> J[Classical detectors]
+    I --> K[CNN detector]
+    J --> L[Metrics + saved models]
+    K --> L
+    H --> M[Residual explanations]
+    K --> N[Gradient saliency]
 ```
 
-## Features
+See `docs/ARCHITECTURE.md` for the experiment contracts and `SECURITY.md` for the security/non-cryptographic boundary.
 
-### Multiple steganography algorithms
+## Payload round trips
 
-The experiment pipeline can generate stego datasets using several embedding strategies, including:
+### Embed
 
-- LSB
-- PVD
-- DCT
-- DWT
-
-Payload is configurable in **bits per pixel**, allowing experiments to measure the trade-off between hidden-data capacity and detectability.
-
-### Reproducible dataset preparation
-
-The pipeline can normalize source covers, generate stego variants, create binary and multiclass classification datasets, and split data reproducibly using a configurable random seed.
-
-Binary experiments classify:
-
-```text
-cover vs stego
+```bash
+python -m stego_ai embed \
+  --input cover.png \
+  --output hidden.png \
+  --algorithm dct \
+  --message "meet at 18:30" \
+  --seed 42
 ```
 
-Multiclass experiments can distinguish classes such as:
+### Extract
 
-```text
-cover
-stego_lsb
-stego_pvd
-stego_dct
-...
+```bash
+python -m stego_ai extract --input hidden.png --key hidden.png.key.json
+python -m stego_ai describe
 ```
 
-### Handcrafted steganalysis features
+The key manifest records reproducibility metadata. DCT/DWT payloads also use a versioned header, payload length, transform parameters, redundancy, and CRC32. LSB extraction uses the same seed-controlled channel permutation.
 
-`models.py` contains several feature extractors:
+## Supported embedding methods
 
-- `raw` — resized RGB pixels as a baseline;
-- `dct` — block-wise DCT coefficient statistics;
-- `residual_hist` — histograms of horizontal/vertical pixel residuals;
-- `residual_cooc` — compact SPAM-like residual co-occurrence features.
+| Method | Domain | UTF-8 round trip | Role |
+|---|---|---:|---|
+| LSB | RGB channel values | yes | simple spatial-domain baseline |
+| DCT | 8×8 luminance blocks | yes | transform-domain QIM/parity embedding |
+| DWT | Haar detail coefficients | yes | transform-domain QIM/parity embedding |
+| PVD | neighbouring pixel differences | dataset generation | perturbation baseline |
+| DFT / SVD | frequency / matrix domains | dataset generation | experimental perturbation baselines |
 
-The residual co-occurrence representation uses horizontal and vertical residual relationships to produce a compact forensic feature vector designed to emphasize subtle local pixel dependencies.
+Transform-domain text payloads are checked against real capacity after header and repetition overhead. User text is rejected when oversized rather than silently truncated.
 
-### Classical ML baselines
+## Dataset and steganalysis pipeline
 
-The training layer supports standard steganalysis baselines including:
+Install the analysis extras:
+
+```bash
+python -m pip install -e ".[analysis]"
+```
+
+Example:
+
+```bash
+python -m stego_ai.pipeline \
+  --cover-dir data/covers \
+  --work-dir runs/bpp_0p2 \
+  --bpp 0.2 \
+  --algorithms lsb pvd dct dwt \
+  --feature-method residual_cooc \
+  --models rf logreg svm \
+  --normalize-covers \
+  --save-models
+```
+
+The dataset preparation path preserves source-image identity so a cover and its near-identical stego variant are assigned consistently. Splitting variants independently would contaminate test results.
+
+### Feature contracts
+
+| Feature | Typical role |
+|---|---|
+| raw RGB | content-heavy sanity baseline |
+| block DCT summaries | transform-energy representation |
+| residual histogram | compact high-pass distribution |
+| residual co-occurrence | directional SPAM-like local dependency representation |
+
+### Detector families
+
+Dependency-safe defaults are:
 
 - Logistic Regression
 - SVM
 - Random Forest
-- XGBoost when installed
-- LightGBM when installed
 
-Optional scaling/PCA can be incorporated through scikit-learn pipelines.
+Optional XGBoost and LightGBM are installed separately rather than being required for the first runnable path.
 
-### CNN analysis and heatmaps
+## CNN detector and explanations
 
-The repository also contains CNN-oriented analysis utilities and heatmap generation scripts for investigating spatial evidence used by learned steganalysis models.
+Install deep-learning extras:
 
-### Experiment automation
+```bash
+python -m pip install -e ".[analysis,deep]"
+```
 
-Payload-sweep and reporting utilities make it possible to compare algorithms and BPP settings without manually rebuilding every dataset.
+Train:
 
-For example, `run.py` is structured to iterate over payload levels, embedding algorithms and classifier families while keeping experiment outputs separated by run.
+```bash
+python -m stego_ai.train_stego_cnn \
+  --dataset-dir runs/bpp_0p2/classification_binary \
+  --task binary \
+  --epochs 25
+```
 
-## Repository highlights
+Generate saliency artifacts using the same checkpoint/model contract:
+
+```bash
+python scripts/heatmaps_cnn.py \
+  --dataset-dir runs/bpp_0p2/classification_binary \
+  --checkpoint runs/bpp_0p2/classification_binary/stegocnn_binary/stegocnn_best.pt \
+  --out-dir runs/bpp_0p2/saliency
+```
+
+`StegoNetLite` starts from fixed high-pass filters and truncation before a compact learned convolutional tower. Residual maps and input-gradient saliency are deliberately documented as different explanation types.
+
+## Repository map
 
 ```text
-stegoCkavas/
-├── pipeline.py                 # Main CLI experiment pipeline
-├── dataset_preparation.py      # Cover/stego generation and dataset splitting
-├── models.py                   # Feature extraction + ML training/evaluation
-├── backend_api.py              # Backend-facing project API
-├── gui.py                      # Desktop GUI
-├── run.py                      # Experiment matrix runner
-├── run_bpp_sweep.py            # Payload/BPP experiments
-├── get_cnn_heatmap.py          # CNN interpretation helper
-├── heatmaps_cnn.py             # Heatmap analysis
-├── qualitative_report.py       # Qualitative error/result analysis
-├── make_report_figures.py      # Figure generation
-├── requirements.txt
-└── README.md
+stego_ai/
+  __main__.py                 module entry point
+  cli.py                      embed/extract/demo/describe commands
+  stego_algorithms.py         spatial + transform embedding primitives
+  dataset_preparation.py      paired dataset generation and splitting
+  models.py                   features + classical ML contracts
+  pipeline.py                 end-to-end experiment runner
+  train_stego_cnn.py          CNN training
+  backend_api.py              programmatic integration surface
+  gui.py                      desktop interface
+scripts/
+  heatmaps_cnn.py             CNN saliency
+  run_bpp_sweep.py            payload sweeps
+  qualitative_report.py       ranked examples/failures
+  make_report_figures.py      report artifacts
+  visualize_residual_map.py   residual diagnostics
+tests/test_stego_lab.py       round-trip/capacity/feature/contract coverage
+docs/ARCHITECTURE.md          architecture and evaluation design
+SECURITY.md                   threat model and non-claims
+pyproject.toml                package + optional dependency groups
+.github/workflows/ci.yml      compile/demo/test pipeline
 ```
 
-## Installation
+## Evaluation checklist
 
-Python 3 is required. A virtual environment is recommended.
+A credible steganalysis run should record:
 
-```bash
-python -m venv .venv
-```
+1. source dataset and preprocessing;
+2. source-image identity before splitting;
+3. embedding algorithm and payload/BPP;
+4. deterministic seeds;
+5. train/validation/test manifests;
+6. balanced accuracy, macro F1, per-class precision/recall and confusion matrices;
+7. cross-payload and cross-algorithm generalization;
+8. failure cases and explanation artifacts.
 
-Activate it and install dependencies:
+A very high classifier score can be a symptom of content leakage, filename leakage, or broken pairing. It is not automatically evidence of a strong detector.
 
-```bash
-pip install -r requirements.txt
-```
+## CI evidence
 
-## Running experiments
+GitHub Actions currently checks the runnable path rather than pretending to train a research detector on every push:
 
-The primary experimental entry point is `pipeline.py`, which exposes command-line arguments for dataset paths, algorithms, BPP, feature extraction, models, random seed, dataset splits and saved outputs.
+- install the package and analysis/dev extras;
+- compile package, scripts, tests, and compatibility launcher;
+- execute the zero-dataset LSB/DCT/DWT integration demo;
+- run the test suite.
 
-The pipeline performs four major stages:
+## Security boundary
 
-1. optional cover normalization;
-2. stego-image generation;
-3. binary/multiclass dataset preparation;
-4. classifier training and evaluation.
+This is an educational/research steganography project, **not an encryption library**. Seeds are not secret keys, CRC32 is not a MAC, and the implementation is not reviewed for confidentiality against a capable adversary. See `SECURITY.md` for the explicit boundary.
 
-The exact available flags can be inspected with:
+## Provenance
 
-```bash
-python pipeline.py --help
-```
-
-If the repository is installed/arranged under the original `stego_ai` package layout, the module form used by the experiment scripts is:
-
-```bash
-python -m stego_ai.pipeline --help
-```
-
-## Experiment outputs
-
-A work directory can contain generated stego images, prepared classification datasets and saved model artifacts. When model saving is enabled, the pipeline writes evaluation metadata and fitted estimators beneath `saved_models/`, including `metrics.json` and Joblib model bundles.
-
-This separation makes it possible to retain the results of multiple payload/algorithm experiments for later comparison.
-
-## Example experiment design
-
-A useful steganalysis experiment is:
-
-```text
-Payloads:    0.1 / 0.4 / 0.8 BPP
-Algorithms:  LSB / PVD / DCT
-Features:    residual_hist or residual_cooc
-Models:      Random Forest / XGBoost / SVM
-```
-
-For each configuration, evaluate binary cover-vs-stego performance and then inspect whether multiclass classification can identify the embedding method.
-
-The important quantity is not merely raw accuracy: false-positive/false-negative behaviour and performance degradation at low payloads are especially informative in steganalysis.
-
-## Why residual features?
-
-Hidden data is designed to avoid obvious visual changes. Raw RGB pixels therefore contain enormous amounts of image-content information unrelated to steganography.
-
-Residual-based features instead emphasize local differences between neighbouring pixels. Embedding operations can perturb the statistical relationships of these residuals even when the resulting image looks unchanged to a human observer.
-
-That makes residual histograms and co-occurrence statistics useful interpretable baselines before moving to specialized deep steganalysis networks.
-
-## Limitations
-
-- The project is research/ coursework-oriented rather than a hardened forensic product.
-- Classical features are intentionally compact and do not reproduce full high-dimensional Spatial Rich Models.
-- Detection performance depends heavily on dataset source, preprocessing, embedding algorithm and payload.
-- JPEG/spatial-domain assumptions differ between algorithms and should not be compared without controlling the image pipeline.
-- Optional XGBoost/LightGBM functionality requires those packages to be installed.
-- Some experiment scripts retain project-specific paths that should be configured before execution.
-- Deep-learning utilities are experimental and separate from the main classical-ML pipeline.
-
-## Possible extensions
-
-Future work could include SRNet/Ye-Net baselines, JPEG-specific steganalysis features, cross-dataset evaluation, calibration curves, ROC/PR analysis, experiment configuration files, MLflow/W&B tracking, adversarial embedding experiments and a packaged CLI.
-
-## Portfolio note
-
-This project spans **image processing, information hiding, statistical feature engineering, machine learning, experimental design, explainability and model evaluation**. Its strongest aspect is the complete experiment pipeline: it can create the manipulated data being studied and then measure how detectable those manipulations are.
+This is a personal project reconstructed from an earlier flat student/research codebase. The repair preserves the original problem domain while replacing dead imports, inconsistent file layout, syntax-broken CNN utilities, and non-runnable experiment assumptions with a package, tests, CLI, and reproducible integration path.

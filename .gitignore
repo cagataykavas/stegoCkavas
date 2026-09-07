@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+demo_output/
+runs/
+models/
+*.joblib
+*.pt
+.DS_Store
+

@@ -226,7 +226,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--dct-size", type=int, default=8, help="DCT block size (typically 8).")
 
     # Models
-    p.add_argument("--models", nargs="+", default=["rf", "xgb", "lgb"], help="Models to train: rf xgb lgb svm logreg")
+    p.add_argument(
+        "--models",
+        nargs="+",
+        default=["rf", "logreg", "svm"],
+        help="Models to train: rf logreg svm (xgb/lgb require optional dependencies).",
+    )
     p.add_argument("--pca-components", type=int, default=None, help="Optional PCA components.")
 
     # Flags
